@@ -1,0 +1,136 @@
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+import random as rd
+import os
+import numpy as np
+
+class Runway:
+
+    def __init__(self, runway_file, height=1080, y_offset=0, ratio=8, num_targets=4):
+        '''
+        runway_file: str - the path to the runway image
+        height: int - the height of the runway on the image
+        y_offset: int - the y offset of the runway on the image (top of the image to the top of the runway)
+        ratio: int - the ratio of the width to the height of the runway
+        num_targets: int - the number of targets to place on the runway
+        '''
+
+        self.height = height
+        self.width = height * ratio
+        self.y_offset = y_offset
+        self.num_targets = num_targets
+        self.runway = mpimg.imread(runway_file)
+        self.points = self.select_coordinates()
+        self.targets = self.select_targets(num_targets)
+
+    def select_targets(self, num_targets):
+
+        target_files = os.listdir('./targets_small')
+        selected_files = rd.sample(target_files, num_targets)
+        return selected_files
+    
+
+    def select_coordinates(self):
+
+        points = []
+        num_points = self.num_targets
+
+        # generate num_points random points
+        while num_points > 0:
+
+            # generate a random point
+            x = rd.randint(0, self.width - 1)
+            y = rd.randint(self.y_offset, self.y_offset + self.height - 1)
+            point = (x, y)
+
+            # check if the point is at least 500px from any other point
+            if all(np.linalg.norm(np.array(point) - np.array(p)) >= 500 for p in points):
+                points.append(point)
+                num_points -= 1
+
+        return points
+    
+
+    def assign_targets(self):
+        
+        img_copy = self.runway.copy()
+        runway_height, runway_width, _ = self.runway.shape
+
+        # iterate over the selected files
+        for i, target_file in enumerate(self.targets):
+
+            # load the overlay image
+            overlay_img = mpimg.imread(f'./targets_small/{target_file}')
+            overlay_height, overlay_width, _ = overlay_img.shape
+
+            # calculate the position to place the overlay image
+            x_start = self.points[i][0] - overlay_width // 2
+            y_start = self.points[i][1] - overlay_height // 2
+
+            # Ensure the overlay image is within the bounds of the original image
+            x_start = max(0, min(x_start, runway_width - overlay_width))
+            y_start = max(0, min(y_start, runway_height - overlay_height))
+
+            # Overlay the image
+            for j in range(overlay_height):
+                for k in range(overlay_width):
+                    if overlay_img[j, k, 3] > 0:
+                        img_copy[y_start + j, x_start + k, :3] = overlay_img[j, k, :3]
+            
+            # Draw a hollow red circle around the target with a parametrized thickness and radius
+            circle_radius = max(overlay_width, overlay_height) // 2  # Base radius
+            radius_multiplier = 3  # Parameterize the radius multiplier
+            circle_radius = int(circle_radius * radius_multiplier)
+            circle_center = self.points[i]
+            thickness = 5  # Parameterize the thickness of the circle
+            for t in range(thickness):
+                for angle in range(0, 360):
+                    rad = np.radians(angle)
+                    x = int(circle_center[0] + (circle_radius + t) * np.cos(rad))
+                    y = int(circle_center[1] + (circle_radius + t) * np.sin(rad))
+                    if 0 <= x < runway_width and 0 <= y < runway_height:
+                        img_copy[y, x, :3] = [1, 0, 0]  # Red color
+        
+        self.runway = img_copy
+        plt.imshow(self.runway)
+        plt.show()
+            
+    
+    def generate_photos(self, num_photos, width=1920, height=1080):
+
+        photos = []
+
+        for i in range(num_photos):
+
+            runway_height, runway_width, _ = self.runway.shape
+
+            # pick a random top left corner
+            x = rd.randint(0, runway_width - width)
+            y = rd.randint(0, runway_height - height)
+            img_copy = self.runway[y:y + height, x:x + width]
+
+            # calculate center of the view
+            center_x = x + width // 2
+            center_y = y + height // 2
+
+            photos.append((img_copy, (center_x, center_y)))
+        
+        return photos
+
+
+
+
+
+def main():
+    runway = Runway("runway_smaller.png", 860, 350, 6,4)
+    runway.assign_targets()
+    photos = runway.generate_photos(20)
+
+    for i, photo in enumerate(photos):
+        plt.imshow(photo[0])
+        plt.title(f"Photo {i + 1}, Center: {photo[1]}")
+        plt.show()
+
+
+if __name__ == '__main__':
+    main()

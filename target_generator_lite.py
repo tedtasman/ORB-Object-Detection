@@ -1,33 +1,60 @@
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import random as rd
-from PIL import Image
+from PIL import Image, ImageEnhance
 import numpy as np
+import pandas as pd
 import cv2
 import os
+from sklearn.cluster import KMeans
 
-# Load an image from file
-img = mpimg.imread(f'runway{rd.randint(1, 4)}.png')
+target_files = os.listdir('./targets_small')
+SELECTED_FILES = rd.sample(target_files, 4)
+print(SELECTED_FILES)
 
-# Get image dimensions
-height, width, _ = img.shape
+def create_target_image():
+    # Load an image from file
+    img = mpimg.imread(f'runway{rd.randint(1, 4)}.png')
 
-# Pick a random point
-random_point = (rd.randint(0, width - 1), rd.randint(height // 5, 4 * height // 5))
+    # Get image dimensions
+    height, width, _ = img.shape
 
-print(f'Random point: {random_point}')
+    # Create a list to store the points and targets used in the image
+    used_points = []
+    used_targets = []
+    target_files = []
 
-# Pick all files from /targets_small
-target_files = os.listdir('/Users/teddytasman/Coding_Projects/PSU_UAS/ObjectDetection/targets_small')
+    # Use only one target per image
+    img, used_points, used_targets, target_file = overlay_random_target(height, width, img, used_targets, used_points)
+    target_files.append(target_file)
 
-for target_file in target_files:
+    # Convert the image to a format suitable for OpenCV
+    img = (img * 255).astype('uint8')
+
+    return img, used_points, used_targets, target_files
+
+def overlay_random_target(height, width, img, used_targets, used_points):
+    # Pick all files from /targets_small
+    target_files = SELECTED_FILES
+        
+    # Pick a random target file ensuring it is not already used
+    while True:
+        target_file = target_files[rd.randint(0, len(target_files) - 1)]
+        if target_file not in used_targets:
+            used_targets.append(target_file)
+            break
+
     # Load the overlay image
-    overlay_img = mpimg.imread(f'/Users/teddytasman/Coding_Projects/PSU_UAS/ObjectDetection/targets_small/{target_file}')
-
-    print(f'Overlay image: {target_file}')
+    overlay_img = mpimg.imread(f'./targets_small/{target_file}')
 
     # Get overlay image dimensions
     overlay_height, overlay_width, _ = overlay_img.shape
+
+    # Pick a random point ensuring it is at least 500px from any point in used_points
+    while True:
+        random_point = (rd.randint(0, width - 1), rd.randint(height // 5, 4 * height // 5))
+        if all(np.linalg.norm(np.array(random_point) - np.array(point)) >= 500 for point in used_points):
+            break
 
     # Calculate the position to place the overlay image
     x_start = random_point[0] - overlay_width // 2
@@ -39,28 +66,89 @@ for target_file in target_files:
 
     # Overlay the image
     img_copy = img.copy()
-    img_copy[y_start:y_start + overlay_height, x_start:x_start + overlay_width] = overlay_img
+    for i in range(overlay_height):
+        for j in range(overlay_width):
+            if overlay_img[i, j, 3] > 0.5:  # Check if the pixel is not transparent
+                img_copy[y_start + i, x_start + j] = overlay_img[i, j, :]  # Copy only RGB channels
 
-    # Convert the image to a format suitable for OpenCV
-    img_copy = (img_copy * 255).astype('uint8')
+    # Add the point to the list of used points
+    used_points.append(random_point)
 
-    # preprocess the image
-    img_copy = cv2.cvtColor(img_copy, cv2.COLOR_RGB2BGR)
+    # Add the overlay image to the list of used targets
+    used_targets.append(target_file)
 
-    # Initialize ORB detector
-    orb = cv2.ORB_create()  # Adjust number of features as needed
+    return img_copy, used_points, used_targets, target_file
 
-    # Detect keypoints and compute descriptors
-    keypoints, descriptors = orb.detectAndCompute(img_copy, None)
+def run_osm(epochs):
+    # Collect all descriptors and their corresponding image and keypoint information
+    all_descriptors = []
+    descriptor_info = []
 
-    # Get keypoint locations
-    keypoint_locations = np.array([kp.pt for kp in keypoints])  # (x, y) coordinates
+    for epoch in range(epochs):
+        print(f'Epoch {epoch + 1}/{epochs}', end='\r')
 
-    # Draw keypoints on the image for visualization
-    output_image = cv2.drawKeypoints(img_copy, keypoints, None, color=(0, 255, 0))
+        # Create a target image
+        img, used_points, used_targets, target_files = create_target_image()
 
-    # Display image with keypoints
-    plt.imshow(output_image, cmap="gray")
-    plt.title(f"ORB Keypoints - {target_file}")
-    plt.axis("off")
-    plt.show()
+        # Increase sharpness
+        pil_img = Image.fromarray(img)
+        enhancer = ImageEnhance.Sharpness(pil_img)
+        pil_img = enhancer.enhance(5.0)  # Increase sharpness by a factor of 2
+        img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+
+        # Initialize ORB detector
+        orb = cv2.ORB_create(nfeatures=10, 
+                             scaleFactor=1.2, 
+                             nlevels=8, 
+                             firstLevel=15, 
+                             WTA_K=2, 
+                             fastThreshold=5)
+
+        # Detect keypoints and compute descriptors
+        keypoints, descriptors = orb.detectAndCompute(img, None)
+
+        # Calculate the average distance from each keypoint to the actual point
+        distances = []
+        for kp in keypoints:
+            for point in used_points:
+                distance = np.linalg.norm(np.array(kp.pt) - np.array(point))
+                distances.append(distance)
+        if distances:
+            avg_distance = np.mean(distances)
+            print(f'Average distance for epoch {epoch + 1}: {avg_distance}')
+
+        # Store descriptors and their corresponding image and keypoint information
+        if descriptors is not None:
+            all_descriptors.append(descriptors)
+            for kp in keypoints:
+                descriptor_info.append((epoch, kp.pt, target_files[0]))  
+
+    print('\n')
+
+    # Stack all descriptors into a single array
+    return np.vstack(all_descriptors), descriptor_info
+
+
+
+def main():
+    descriptors, descriptor_info = run_osm(30)
+
+
+    kmeans = KMeans(n_clusters=4, random_state=0).fit(descriptors)
+
+
+
+    # Analyze clusters
+    clusters = kmeans.predict(descriptors)
+    cluster_info = {i: [] for i in range(kmeans.n_clusters)}
+    for idx, cluster in enumerate(clusters):
+        cluster_info[cluster].append(descriptor_info[idx])
+
+    # Print cluster information
+    for cluster, info in cluster_info.items():
+        print(f'Cluster {cluster}:')
+        for epoch, kp_pt, target_file in info:
+            print(f'\t{target_file}')
+
+if __name__ == '__main__':
+    main()
