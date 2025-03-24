@@ -76,24 +76,9 @@ class Runway:
                 for k in range(overlay_width):
                     if overlay_img[j, k, 3] > 0:
                         img_copy[y_start + j, x_start + k, :3] = overlay_img[j, k, :3]
-            
-            # Draw a hollow red circle around the target with a parametrized thickness and radius
-            circle_radius = max(overlay_width, overlay_height) // 2  # Base radius
-            radius_multiplier = 3  # Parameterize the radius multiplier
-            circle_radius = int(circle_radius * radius_multiplier)
-            circle_center = self.points[i]
-            thickness = 5  # Parameterize the thickness of the circle
-            for t in range(thickness):
-                for angle in range(0, 360):
-                    rad = np.radians(angle)
-                    x = int(circle_center[0] + (circle_radius + t) * np.cos(rad))
-                    y = int(circle_center[1] + (circle_radius + t) * np.sin(rad))
-                    if 0 <= x < runway_width and 0 <= y < runway_height:
-                        img_copy[y, x, :3] = [1, 0, 0]  # Red color
         
         self.runway = img_copy
-        plt.imshow(self.runway)
-        plt.show()
+
             
     
     def generate_photos(self, num_photos, width=1920, height=1080):
@@ -109,11 +94,7 @@ class Runway:
             y = rd.randint(0, runway_height - height)
             img_copy = self.runway[y:y + height, x:x + width]
 
-            # calculate center of the view
-            center_x = x + width // 2
-            center_y = y + height // 2
-
-            photos.append((img_copy, (center_x, center_y)))
+            photos.append((img_copy, (x, y)))
         
         return photos
 

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import cv2
 import os
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans # type: ignore
 
 target_files = os.listdir('./targets_small')
 SELECTED_FILES = rd.sample(target_files, 4)
