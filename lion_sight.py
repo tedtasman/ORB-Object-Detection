@@ -4,7 +4,7 @@ import random as rd
 import os
 from PIL import Image, ImageEnhance
 from sklearn.cluster import KMeans # type: ignore
-from sklearn.neighbors import NearestNeighbors
+from sklearn.neighbors import NearestNeighbors # type: ignore
 import detect_zone_generator as dzg
 
 class LionSight:
@@ -95,8 +95,7 @@ class LionSight:
         distances = distances[:, 1]
 
         # Filter the points based on the distance to the nearest neighbor
-        self.all_points = self.all_points[(distances < 200 and distances > 30)]
-
+        self.all_points = self.all_points[distances < 500]
 
     def cluster(self):
         
@@ -119,8 +118,8 @@ class LionSight:
     
 
 def main():
-    lion_sight = LionSight()
-    Runway = dzg.Runway("runway_smaller.png", 860, 350, 6,4)
+    lion_sight = LionSight(num_targets=6)
+    Runway = dzg.Runway("runway_smaller.png", height=860, y_offset=350, ratio=6, num_targets=4)
     Runway.assign_targets()
     photos = Runway.generate_photos(30)
     
@@ -159,7 +158,6 @@ def main():
     plt.title('Clustered Keypoints on Runway')
     plt.xlabel('X Coordinate')
     plt.ylabel('Y Coordinate')
-    plt.legend()
     plt.show()
     
 

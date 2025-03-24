@@ -74,7 +74,7 @@ class Runway:
             # Overlay the image
             for j in range(overlay_height):
                 for k in range(overlay_width):
-                    if overlay_img[j, k, 3] > 0:
+                    if overlay_img[j, k, 3] > 0.5:
                         img_copy[y_start + j, x_start + k, :3] = overlay_img[j, k, :3]
         
         self.runway = img_copy
