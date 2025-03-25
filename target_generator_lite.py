@@ -7,10 +7,7 @@ import pandas as pd
 import cv2
 import os
 from sklearn.cluster import KMeans # type: ignore
-
-target_files = os.listdir('./targets_small')
-SELECTED_FILES = rd.sample(target_files, 4)
-print(SELECTED_FILES)
+import detect_zone_generator as dzg
 
 def create_target_image():
     # Load an image from file
@@ -35,7 +32,7 @@ def create_target_image():
 
 def overlay_random_target(height, width, img, used_targets, used_points):
     # Pick all files from /targets_small
-    target_files = SELECTED_FILES
+    target_files = None
         
     # Pick a random target file ensuring it is not already used
     while True:
@@ -79,76 +76,49 @@ def overlay_random_target(height, width, img, used_targets, used_points):
 
     return img_copy, used_points, used_targets, target_file
 
-def run_osm(epochs):
-    # Collect all descriptors and their corresponding image and keypoint information
-    all_descriptors = []
-    descriptor_info = []
+def run_osm(img):
 
-    for epoch in range(epochs):
-        print(f'Epoch {epoch + 1}/{epochs}', end='\r')
 
-        # Create a target image
-        img, used_points, used_targets, target_files = create_target_image()
+    # Preprocess the image
+    img = (img * 255).astype('uint8')
+    pil_img = Image.fromarray(img)
+    img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2GRAY)
+    img = cv2.GaussianBlur(img, (5, 5), 0)
+    img = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
 
-        # Increase sharpness
-        pil_img = Image.fromarray(img)
-        enhancer = ImageEnhance.Sharpness(pil_img)
-        pil_img = enhancer.enhance(5.0)  # Increase sharpness by a factor of 2
-        img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+    # Initialize ORB detector
+    orb = cv2.ORB_create(nfeatures=10, 
+                            scaleFactor=1.2, 
+                            nlevels=8, 
+                            firstLevel=15, 
+                            WTA_K=2, 
+                            fastThreshold=5)
 
-        # Initialize ORB detector
-        orb = cv2.ORB_create(nfeatures=10, 
-                             scaleFactor=1.2, 
-                             nlevels=8, 
-                             firstLevel=15, 
-                             WTA_K=2, 
-                             fastThreshold=5)
+    # Detect keypoints and compute descriptors
+    keypoints, descriptors = orb.detectAndCompute(img, None)
 
-        # Detect keypoints and compute descriptors
-        keypoints, descriptors = orb.detectAndCompute(img, None)
+    # Draw keypoints on the image
+    img_with_keypoints = cv2.drawKeypoints(img, keypoints, None, color=(0, 255, 0), flags=cv2.DrawMatchesFlags_DRAW_RICH_KEYPOINTS)
 
-        # Calculate the average distance from each keypoint to the actual point
-        distances = []
-        for kp in keypoints:
-            for point in used_points:
-                distance = np.linalg.norm(np.array(kp.pt) - np.array(point))
-                distances.append(distance)
-        if distances:
-            avg_distance = np.mean(distances)
-            print(f'Average distance for epoch {epoch + 1}: {avg_distance}')
+    # Display the image with keypoints
+    plt.imshow(cv2.cvtColor(img_with_keypoints, cv2.COLOR_BGR2RGB))
+    plt.title("Image with Keypoints")
+    plt.axis("off")
+    plt.show()
 
-        # Store descriptors and their corresponding image and keypoint information
-        if descriptors is not None:
-            all_descriptors.append(descriptors)
-            for kp in keypoints:
-                descriptor_info.append((epoch, kp.pt, target_files[0]))  
 
     print('\n')
-
-    # Stack all descriptors into a single array
-    return np.vstack(all_descriptors), descriptor_info
 
 
 
 def main():
-    descriptors, descriptor_info = run_osm(30)
 
+    Runway = dzg.Runway("runway_smaller.png", height=860, y_offset=350, ratio=6, num_targets=4)
+    Runway.assign_targets()
+    photos = Runway.generate_photos(3)
 
-    kmeans = KMeans(n_clusters=4, random_state=0).fit(descriptors)
-
-
-
-    # Analyze clusters
-    clusters = kmeans.predict(descriptors)
-    cluster_info = {i: [] for i in range(kmeans.n_clusters)}
-    for idx, cluster in enumerate(clusters):
-        cluster_info[cluster].append(descriptor_info[idx])
-
-    # Print cluster information
-    for cluster, info in cluster_info.items():
-        print(f'Cluster {cluster}:')
-        for epoch, kp_pt, target_file in info:
-            print(f'\t{target_file}')
+    for i, photo in enumerate(photos):
+        run_osm(photo[0])
 
 if __name__ == '__main__':
     main()

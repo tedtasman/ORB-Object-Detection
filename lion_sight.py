@@ -106,10 +106,12 @@ class LionSight:
         kmeans = KMeans(n_clusters=self.num_targets, random_state=0)
 
         # Fit the k-means model
-        kmeans.fit(self.all_points)
+        kmeans.fit(self.all_points[:, -2:])
+
+        print(self.all_points[:, -2:])
 
         # Analyze clusters
-        clusters = kmeans.predict(self.all_points)
+        clusters = kmeans.predict(self.all_points[:, -2:])
         cluster_info = {i: [] for i in range(kmeans.n_clusters)}
         for idx, cluster in enumerate(clusters):
             cluster_info[cluster].append(self.all_points[idx])
@@ -118,7 +120,7 @@ class LionSight:
     
 
 def main():
-    lion_sight = LionSight(num_targets=6)
+    lion_sight = LionSight(num_targets=8)
     Runway = dzg.Runway("runway_smaller.png", height=860, y_offset=350, ratio=6, num_targets=4)
     Runway.assign_targets()
     photos = Runway.generate_photos(30)
