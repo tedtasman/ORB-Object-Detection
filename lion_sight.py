@@ -6,6 +6,9 @@ from PIL import Image, ImageEnhance
 from sklearn.cluster import KMeans # type: ignore
 from sklearn.neighbors import NearestNeighbors # type: ignore
 import detect_zone_generator as dzg
+import matplotlib.pyplot as plt
+import multiprocessing
+
 
 class LionSight:
 
@@ -108,8 +111,6 @@ class LionSight:
         # Fit the k-means model
         kmeans.fit(self.all_points[:, -2:])
 
-        print(self.all_points[:, -2:])
-
         # Analyze clusters
         clusters = kmeans.predict(self.all_points[:, -2:])
         cluster_info = {i: [] for i in range(kmeans.n_clusters)}
@@ -119,49 +120,192 @@ class LionSight:
         return cluster_info, kmeans.cluster_centers_
     
 
+    def choose_clusters(self, cluster_info, cluster_centers, num_targets=4, offset=6, width=5, scale=0.5, proximity=100, runway=None):
+        
+        cluster_scores = []
+
+        for cluster in cluster_info.values():
+            
+            # Extract x and y coordinates of the cluster points
+            cluster_points = np.array(cluster)
+            x_coords = cluster_points[:, -2]
+            y_coords = cluster_points[:, -1]
+
+            # Plot the cluster points on the runway
+            # Load the runway image
+            runway_image = runway.runway.copy()
+            runway_image = cv2.cvtColor(runway_image, cv2.COLOR_BGR2RGB)
+
+            # Display the runway image as the background
+            plt.imshow(runway_image)
+
+            # Plot the cluster points
+            plt.scatter(x_coords, y_coords, label=f'Cluster {len(cluster_scores)}')
+            plt.show()
+
+            # Calculate the cluster center
+            cluster_center = np.mean(np.array(cluster)[:, :], axis=0)
+
+            # Calculate the Euclidean distances of points from the cluster center
+            distances_from_center = np.linalg.norm(np.array(cluster)[:, :] - cluster_center, axis=1)
+
+            # Use the average distance as the cluster spread
+            cluster_spread = np.mean(distances_from_center)
+
+            # Calculate the distance to the nearest cluster center
+            distances = np.linalg.norm(cluster_centers - np.mean(np.array(cluster)[:, -2:], axis=0), axis=1)
+
+            # Calculate the second smallest distance
+            next_nearest = np.partition(distances, 1)[1]
+
+            # Calculate the score
+            # variance should be low, but not too low
+            # distance to the next nearest cluster center should be reasonably high
+
+            variance_score = max(0, scale * (cluster_spread - offset) ** 2 - width)
+
+            proximity_score = 1 if next_nearest > proximity else float('inf')
+
+            cluster_scores.append(variance_score * proximity_score)
+
+        # Choose the best clusters
+        best_clusters = np.argsort(cluster_scores)[:num_targets]
+
+        # return best cluster centers
+        return cluster_centers[best_clusters]
+
+
+    def categorize_clusters(self, cluster_info, real_coords, accuracy):
+        
+        cluster_data = np.array([])
+
+        for i, cluster in enumerate(cluster_info.values()):
+            
+            # Calculate the cluster center
+            cluster_center = np.mean(np.array(cluster)[:, -2:], axis=0)
+
+            # Calculate the Euclidean distances of points from the cluster center
+            distances_from_center = np.linalg.norm(np.array(cluster)[:, -2:] - cluster_center, axis=1)
+
+            # Use the average distance as the cluster spread
+            cluster_spread = np.mean(distances_from_center)
+
+            # Calculate the distance from the cluster center to the real coordinates
+            distances = np.linalg.norm(real_coords - cluster_center, axis=1)
+
+            # Calculate the closest real coordinate
+            closest_real_coord = np.argmin(distances)
+
+            # Calculate the distance from the cluster center to the closest real coordinate
+            distance_to_real_coord = distances[closest_real_coord]
+
+            # determine if the cluster is correct
+            correct = 1 if distance_to_real_coord < accuracy else -1
+            
+            # calculate full dimensional center without the true coordinates
+            full_center = np.mean(np.array(cluster)[:, :-2], axis=0)
+
+            # Append the cluster data
+            current_row = np.hstack([full_center, cluster_spread, correct])
+
+            # Initialize cluster_data if it's empty
+            if cluster_data.size == 0:
+                cluster_data = current_row
+            else:
+                cluster_data = np.vstack((cluster_data, current_row))
+        
+        return cluster_data
+
+
+
+    
+
 def main():
-    lion_sight = LionSight(num_targets=8)
-    Runway = dzg.Runway("runway_smaller.png", height=860, y_offset=350, ratio=6, num_targets=4)
-    Runway.assign_targets()
-    photos = Runway.generate_photos(30)
+
+    lion_sight = LionSight(num_targets=14)
+
+    epochs = 100
+    num_photos = 30
+
+    for i in range(epochs):
+
+        print(f"\nEpoch: {i + 1}")
+
+        Runway = dzg.Runway("runway_smaller.png", height=800, y_offset=400, ratio=8, num_targets=4)
+        Runway.assign_targets()
+        photos = Runway.generate_photos(num_photos)
+        real_coords = np.array(Runway.points)
+
+        for i, photo in enumerate(photos):
+            print(f".", end='', flush=True)
+            lion_sight.detect_and_locate(photo)
+
+        cluster_info, cluster_centers = lion_sight.cluster()
+
+        cluster_data = lion_sight.categorize_clusters(cluster_info, real_coords, 100)
+
+        with open('cluster_data.csv', 'a') as f:
+            np.savetxt(f, cluster_data, delimiter=',')
+        
     
-    real_coords = np.array(Runway.points)
-    for i, photo in enumerate(photos):
-        print(f"Processing Photo: {i + 1}")
-        lion_sight.detect_and_locate(photo)
+
     
-    import matplotlib.pyplot as plt
+    '''for i in range(4, 20):
+        lion_sight.num_targets = i
 
-    cluster_info, cluster_centers = lion_sight.cluster()
+        cluster_info, cluster_centers = lion_sight.cluster()
 
-    # Plot each point based on x, y coordinates, colored by cluster
-    colors = plt.cm.get_cmap('tab10', lion_sight.num_targets)
 
-    # Load the runway image
-    runway_image = Runway.runway.copy()
-    runway_image = cv2.cvtColor(runway_image, cv2.COLOR_BGR2RGB)
+        #lion_sight.categorize_clusters(cluster_info, cluster_centers, real_coords, 100, Runway)
 
-    plt.figure(figsize=(10, 8))
-    plt.imshow(runway_image)  # Display the runway image as the background
 
-    # Plot the clustered keypoints
-    for cluster_id, points in cluster_info.items():
-        points = np.array(points)
-        x_coords = points[:, -2]  # Extract x-coordinates
-        y_coords = points[:, -1]  # Extract y-coordinates
-        plt.scatter(x_coords, y_coords, label=f'Cluster {cluster_id}', color=colors(cluster_id))
+        # Plot each point based on x, y coordinates, colored by cluster
+        colors = plt.cm.get_cmap('tab10', lion_sight.num_targets)
 
-    # plot the cluster centers
-    plt.scatter(cluster_centers[:, -2], cluster_centers[:, -1], label='Cluster Centers', color='red', marker='x')
+        # Load the runway image
+        runway_image = Runway.runway.copy()
+        runway_image = cv2.cvtColor(runway_image, cv2.COLOR_BGR2RGB)
 
-    # Plot the real coordinates
-    plt.scatter(real_coords[:, 0], real_coords[:, 1], label='Real Coordinates', color='black', marker='x')
+        plt.figure(figsize=(10, 8))
+        plt.imshow(runway_image)  # Display the runway image as the background
 
-    plt.title('Clustered Keypoints on Runway')
-    plt.xlabel('X Coordinate')
-    plt.ylabel('Y Coordinate')
-    plt.show()
+        # Plot the clustered keypoints
+        for cluster_id, points in cluster_info.items():
+            points = np.array(points)
+            x_coords = points[:, -2]  # Extract x-coordinates
+            y_coords = points[:, -1]  # Extract y-coordinates
+            plt.scatter(x_coords, y_coords, label=f'Cluster {cluster_id}', color=colors(cluster_id))
+
+        # plot the cluster centers
+        plt.scatter(cluster_centers[:, -2], cluster_centers[:, -1], label='Cluster Centers', color='red', marker='*')
+
+        # Plot the real coordinates
+        plt.scatter(real_coords[:, 0], real_coords[:, 1], label='Real Coordinates', color='black', marker='x')
+
+        plt.title(f'K = {lion_sight.num_targets}')
+        plt.xlabel('X Coordinate')
+        plt.ylabel('Y Coordinate')
+        plt.show()'''
     
+
+def run_concurrent_instances(instance_id):
+    print(f"Starting instance {instance_id}")
+    main()  # Call the main function from your script
+    print(f"Instance {instance_id} finished")
 
 if __name__ == "__main__":
     main()
+    '''num_instances = 4  # Number of concurrent instances to run
+
+    # Create a pool of processes
+    processes = []
+    for i in range(num_instances):
+        process = multiprocessing.Process(target=run_concurrent_instances, args=(i,))
+        processes.append(process)
+        process.start()
+
+    # Wait for all processes to complete
+    for process in processes:
+        process.join()
+
+    print("All instances finished.")'''

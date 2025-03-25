@@ -74,27 +74,32 @@ class Runway:
             # Overlay the image
             for j in range(overlay_height):
                 for k in range(overlay_width):
-                    if overlay_img[j, k, 3] > 0.5:
+                    if overlay_img[j, k, 3] > 0.1:
                         img_copy[y_start + j, x_start + k, :3] = overlay_img[j, k, :3]
         
         self.runway = img_copy
 
             
     
-    def generate_photos(self, num_photos, width=1920, height=1080):
+    def generate_photos(self, num_photos, width=1920, height=1080, y=250):
 
         photos = []
+        runway_height, runway_width, _ = self.runway.shape
+        x = 0
+        x_step = (runway_width - width) // (num_photos - 1) if num_photos > 1 else runway_width - width
 
-        for i in range(num_photos):
+        while x + width <= runway_width:
 
-            runway_height, runway_width, _ = self.runway.shape
-
-            # pick a random top left corner
-            x = rd.randint(0, runway_width - width)
-            y = rd.randint(0, runway_height - height)
+            # take photo at the current position
             img_copy = self.runway[y:y + height, x:x + width]
 
+            # append the photo to the list with the coordinates
             photos.append((img_copy, (x, y)))
+
+            # update the position
+            x += x_step
+
+            num_photos -= 1
         
         return photos
 
@@ -103,9 +108,9 @@ class Runway:
 
 
 def main():
-    runway = Runway("runway_smaller.png", 860, 350, 6,4)
+    runway = Runway("runway_smaller.png", height=800, y_offset=400, ratio=8, num_targets=4)
     runway.assign_targets()
-    photos = runway.generate_photos(20)
+    photos = runway.generate_photos(5)
 
     for i, photo in enumerate(photos):
         plt.imshow(photo[0])
