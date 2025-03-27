@@ -7,6 +7,7 @@ from sklearn.cluster import KMeans # type: ignore
 from sklearn.neighbors import NearestNeighbors # type: ignore
 import detect_zone_generator as dzg
 import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 import multiprocessing
 import time
 
@@ -24,6 +25,14 @@ class LionSight:
             WTA_K=wta_k,
             fastThreshold=fast_threshold
         )
+        self.yolo = cv2.dnn.readNet('yolov3.weights', 'yolov3.cfg')
+        with open('coco.names', 'r') as f:
+            self.classes = [line.strip() for line in f.readlines()]
+
+        # Set the backend and target for the YOLO model
+        self.yolo.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)  # Use OpenCV as the backend
+        self.yolo.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)       # Use CPU as the target
+
         self.all_points = np.array([])
 
 
@@ -48,6 +57,108 @@ class LionSight:
         return keypoints, descriptors
     
 
+    def crop_and_detect(self, photo, crop_size=(416, 416), overlap=0.2):
+        height, width = photo.shape[:2]
+        step_x = int(crop_size[0] * (1 - overlap))
+        step_y = int(crop_size[1] * (1 - overlap))
+
+        results = []
+
+        for y in range(0, height, step_y):
+            for x in range(0, width, step_x):
+                # Crop the image
+                crop = photo[y:y + crop_size[1], x:x + crop_size[0]]
+
+                # Skip if the crop is smaller than the required size
+                if crop.shape[0] < crop_size[1] or crop.shape[1] < crop_size[0]:
+                    continue
+
+                # Run YOLO on the crop
+                outputs = self.run_yolo(crop)
+                detections = self.process_yolo_outputs(outputs, crop)
+
+                # Adjust bounding boxes to the original image coordinates
+                for box, confidence, class_id in detections:
+                    box[0] += x  # Adjust x-coordinate
+                    box[1] += y  # Adjust y-coordinate
+                    results.append((box, confidence, class_id))
+
+        return results
+
+
+    def run_yolo(self, photo):
+
+        # Convert the image to uint8
+        photo = (photo * 255).astype('uint8')
+
+        # Verify if the image is in RGB format not RGBA
+        if photo.shape[2] == 4:
+            photo = cv2.cvtColor(photo, cv2.COLOR_RGBA2RGB)
+
+        # Get image blob
+        blob = cv2.dnn.blobFromImage(photo, 1 / 255, (416, 416), [0, 0, 0], 1, crop=False)        
+        
+        # Set the input to the model
+        self.yolo.setInput(blob)
+
+        # Get the output layer names
+        layer_names = self.yolo.getLayerNames()
+        output_layers = [layer_names[i - 1] for i in self.yolo.getUnconnectedOutLayers()]
+
+        # Run forward pass
+        outputs = self.yolo.forward(output_layers)
+
+        return outputs
+
+    def process_yolo_outputs(self, outputs, photo, confidence_threshold=0, nms_threshold=0):
+
+        height, width = photo.shape[:2]
+        boxes = []
+        confidences = []
+        class_ids = []
+
+        # Iterate over each output layer
+        for output in outputs:
+
+            # Iterate over each detection
+            for detection in output:
+
+                # Get the class ID and confidence score
+                scores = detection[5:]
+                class_id = np.argmax(scores)
+                confidence = scores[class_id]
+
+                # Filter out weak predictions
+                if confidence > confidence_threshold:
+                    
+                    print(f"Class: {self.classes[class_id]}, Confidence: {confidence}")
+
+                    # Get the bounding box coordinates
+                    center_x = int(detection[0] * width)
+                    center_y = int(detection[1] * height)
+
+                    # Calculate the bounding box size
+                    w = int(detection[2] * width)
+                    h = int(detection[3] * height)
+
+                    # Calculate the bounding box top-left corner
+                    x = int(center_x - w / 2)
+                    y = int(center_y - h / 2)
+
+                    boxes.append([x, y, w, h])
+                    confidences.append(float(confidence))
+                    class_ids.append(class_id)
+    
+        # Apply non-maxima suppression to remove overlapping boxes
+        indices = cv2.dnn.NMSBoxes(boxes, confidences, confidence_threshold, nms_threshold)
+
+        results = []
+        for i in indices:
+            results.append((boxes[i], confidences[i], class_ids[i]))
+        
+        return results
+
+
     def prepare_keypoints(self, keypoints, descriptors, photo):
         
         # Get the image coordinates
@@ -70,7 +181,6 @@ class LionSight:
             else:
                 self.all_points = np.vstack((self.all_points, current_row))
 
-    
 
     def detect_and_locate(self, photo):
         
@@ -82,7 +192,29 @@ class LionSight:
 
         # Locate keypoints
         self.prepare_keypoints(keypoints, descriptors, photo)
-         
+    
+
+    def detect_and_locate_yolo(self, photo):
+
+        results = self.crop_and_detect(photo[0], crop_size=(416, 416), overlap=0.2)
+
+        located_results=[]
+
+        # Iterate over the results
+        for result in results:
+            box, confidence, class_id = result
+
+            # get the center of coordinates of the bounding box
+            center_x = int(box[0] + box[2] / 2)
+            center_y = int(box[1] + box[3] / 2)
+
+            # get the true coordinates
+            true_coords = (center_x + photo[1][0], center_y + photo[1][1])
+
+            located_results.append((confidence, class_id, true_coords))
+
+        return located_results
+
 
     def filter_points(self):
         
@@ -100,6 +232,7 @@ class LionSight:
 
         # Filter the points based on the distance to the nearest neighbor
         self.all_points = self.all_points[distances < 500]
+
 
     def cluster(self):
         
@@ -221,7 +354,7 @@ class LionSight:
 
     
 
-def main():
+'''def main():
 
     lion_sight = LionSight(num_targets=14, wta_k=3, nfeatures=50)
 
@@ -288,8 +421,41 @@ def main():
         plt.title(f'K = {lion_sight.num_targets}')
         plt.xlabel('X Coordinate')
         plt.ylabel('Y Coordinate')
-        plt.show()
+        plt.show()'''
+
+def main():
     
+    ls = LionSight(num_targets=4, wta_k=3, nfeatures=50)
+    num_photos = 10
+
+    Runway = dzg.Runway("runway_smaller.png", height=800, y_offset=400, ratio=8, num_targets=14)
+    Runway.assign_targets()
+    photos = Runway.generate_photos(num_photos)
+    real_coords = np.array(Runway.points)
+
+    target_coords = []
+
+    for i, photo in enumerate(photos):
+
+        print(f"Processing Photo: {i + 1}")
+        results = ls.detect_and_locate_yolo(photo)
+
+        for result in results:
+            confidence, class_id, true_coords = result
+            target_coords.append(true_coords)
+
+    # Load the runway image
+    runway_image = Runway.runway.copy()
+    runway_image = cv2.cvtColor(runway_image, cv2.COLOR_BGR2RGB)
+
+    plt.figure(figsize=(10, 8))
+    plt.imshow(runway_image)  # Display the runway image as the background
+
+    target_coords = np.array(target_coords)  # Convert to NumPy array
+    plt.scatter(target_coords[:, 0], target_coords[:, 1], label='Cluster Centers', color='red', marker='*')
+    plt.scatter(real_coords[:, 0], real_coords[:, 1], label='Real Coordinates', color='black', marker='x')
+    plt.title('?')
+    plt.show()
 
 def run_concurrent_instances(instance_id):
     print(f"Starting instance {instance_id}")

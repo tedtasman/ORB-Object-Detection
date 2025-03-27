@@ -60,7 +60,7 @@ class Runway:
         for i, target_file in enumerate(self.targets):
 
             # load the overlay image
-            overlay_img = mpimg.imread(f'./targets_small/{target_file}')
+            overlay_img = mpimg.imread(f'./targets/{target_file}')
             overlay_height, overlay_width, _ = overlay_img.shape
 
             # calculate the position to place the overlay image
