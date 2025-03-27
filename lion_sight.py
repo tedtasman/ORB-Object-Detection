@@ -223,9 +223,9 @@ class LionSight:
 
 def main():
 
-    lion_sight = LionSight(num_targets=14, wta_k=3)
+    lion_sight = LionSight(num_targets=14, wta_k=3, nfeatures=50)
 
-    epochs = 100
+    epochs = 1
     num_photos = 30
 
     for i in range(epochs):
@@ -240,20 +240,20 @@ def main():
         for i, photo in enumerate(photos):
             #print(f".", end='', flush=True)
             #start_time = time.time()
-            lion_sight.detect_and_locate(photo)
+            lion_sight.detect_and_locate(photo,)
             #print(f"Time taken: {time.time() - start_time}")
 
         cluster_info, cluster_centers = lion_sight.cluster()
 
         cluster_data = lion_sight.categorize_clusters(cluster_info, real_coords, 100)
 
-        with open('cluster_data_2.csv', 'a') as f:
-            np.savetxt(f, cluster_data, delimiter=',')
+        #with open('cluster_data_2.csv', 'a') as f:
+            #np.savetxt(f, cluster_data, delimiter=',')
         
     
 
     
-    '''for i in range(4, 20):
+    for i in range(4, 20):
         lion_sight.num_targets = i
 
         cluster_info, cluster_centers = lion_sight.cluster()
@@ -288,7 +288,7 @@ def main():
         plt.title(f'K = {lion_sight.num_targets}')
         plt.xlabel('X Coordinate')
         plt.ylabel('Y Coordinate')
-        plt.show()'''
+        plt.show()
     
 
 def run_concurrent_instances(instance_id):
@@ -297,8 +297,8 @@ def run_concurrent_instances(instance_id):
     print(f"Instance {instance_id} finished")
 
 if __name__ == "__main__":
-    #main()
-    num_instances = 4  # Number of concurrent instances to run
+    main()
+    '''num_instances = 4  # Number of concurrent instances to run
 
     # Create a pool of processes
     processes = []
@@ -311,4 +311,4 @@ if __name__ == "__main__":
     for process in processes:
         process.join()
 
-    print("All instances finished.")
+    print("All instances finished.")'''

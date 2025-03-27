@@ -82,16 +82,16 @@ def run_osm(img):
     # Preprocess the image
     img = (img * 255).astype('uint8')
     pil_img = Image.fromarray(img)
-    img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2GRAY)
-    img = cv2.GaussianBlur(img, (5, 5), 0)
-    img = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+    enhancer = ImageEnhance.Sharpness(pil_img)
+    pil_img = enhancer.enhance(5.0)  # Increase sharpness by a factor of 2
+    img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
     # Initialize ORB detector
-    orb = cv2.ORB_create(nfeatures=10, 
+    orb = cv2.ORB_create(nfeatures=500, 
                             scaleFactor=1.2, 
-                            nlevels=8, 
-                            firstLevel=15, 
-                            WTA_K=2, 
+                            nlevels=10, 
+                            firstLevel=5, 
+                            WTA_K=3, 
                             fastThreshold=5)
 
     # Detect keypoints and compute descriptors
@@ -113,9 +113,9 @@ def run_osm(img):
 
 def main():
 
-    Runway = dzg.Runway("runway_smaller.png", height=860, y_offset=350, ratio=6, num_targets=4)
+    Runway = dzg.Runway("runway_smaller.png", height=860, y_offset=350, ratio=6, num_targets=10)
     Runway.assign_targets()
-    photos = Runway.generate_photos(3)
+    photos = Runway.generate_photos(10)
 
     for i, photo in enumerate(photos):
         run_osm(photo[0])
