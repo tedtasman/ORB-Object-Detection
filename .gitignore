@@ -2,3 +2,12 @@ runway.png
 /targets
 __pycache__
 .DS_Store
+
+/lion_sight_2/training_data
+/lion_sight_2/validation_data
+
+/backgrounds
+/backgrounds_upscaled
+
+/people
+/targets_2
