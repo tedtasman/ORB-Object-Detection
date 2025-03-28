@@ -1,90 +1,36 @@
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader
-from tqdm import tqdm # type: ignore
-from torchvision import transforms, datasets, models # type: ignore
+import cv2
+import numpy as np
+from sklearn.cluster import MiniBatchKMeans # type: ignore
+from ls2_cluster_orb import ClusterORB
 
-TRAIN_DIRECTORY = './training_data'
-VALIDATION_DIRECTORY = './validation_data'
-NUM_EPOCHS = 10
+class LionSight2:
 
-
-model = models.mobilenet_v2(pretrained=True)
-model.classifier = nn.Sequential(
-    nn.Linear(model.last_channel, 512),
-    nn.ReLU(),
-    nn.Dropout(0.5),
-    nn.Linear(512, 1),
-)
-
-criterion = nn.BCEWithLogitsLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
-
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.RandomHorizontalFlip(),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-])
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model.to(device)
-
-# Load the dataset
-train_dataset = datasets.ImageFolder(root=TRAIN_DIRECTORY, transform=transform)
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-
-# Load the validation dataset
-validation_dataset = datasets.ImageFolder(root=VALIDATION_DIRECTORY, transform=transform)
-validation_loader = DataLoader(validation_dataset, batch_size=32, shuffle=False)
-
-# Training loop
-for epoch in range(NUM_EPOCHS):
-    model.train()
-    running_loss = 0.0
-    progress_bar = tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{NUM_EPOCHS}]")
-    for images, labels in progress_bar:
-        images, labels = images.to(device), labels.to(device)
-
-        # Reshape labels to match the output shape
-        labels = labels.view(-1, 1)
-
-        optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, labels.float())
-        loss.backward()
-        optimizer.step()
-
-        running_loss += loss.item()
-        progress_bar.set_postfix(loss=(running_loss / len(train_loader)))
+    def __init__(self, num_targets, net, orb):
+        self.num_targets = num_targets
+        self.orb = orb
+        self.net = net
     
-    print(f"Epoch [{epoch + 1}/{NUM_EPOCHS}], Loss: {running_loss / len(train_loader):.4f}")
+    
+    def detect(self, images_path):
+        '''
+        Detect objects in the images using the neural network and ORB feature detector.
+        '''
 
-# Validation loop
-model.eval()
-running_corrects = 0
-running_loss = 0.0
+        # Load the images
+        images = [cv2.imread(image_path) for image_path in images_path]
 
-with torch.no_grad():
-    progress_bar = tqdm(validation_loader, desc="Validation")
-    for images, labels in progress_bar:
-        images, labels = images.to(device), labels.to(device)
+        # Process 
+        keypoints, _ = self.orb.process_images(images)
 
-        # Reshape labels to match the output shape
-        labels = labels.view(-1, 1)
+        # TODO: Run the neural network on the keypoints and get the predictions
+        
 
-        outputs = model(images)
-        loss = criterion(outputs, labels.float())
 
-        running_loss += loss.item()
 
-        predictions = torch.round(outputs)
-        running_corrects += torch.sum(predictions == labels.data.view_as(predictions)).item() # type: ignore
+    
 
-        progress_bar.set_postfix(loss=(running_loss / len(validation_loader)))
 
-    epoch_loss = running_loss / len(validation_loader)
-    epoch_acc = running_corrects / len(validation_dataset)
+    
 
-    print(f"Validation Loss: {epoch_loss:.4f}, Accuracy: {epoch_acc:.4f}")
+    
